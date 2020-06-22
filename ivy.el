@@ -2648,7 +2648,8 @@ Minibuffer bindings:
 (defun ivy-re-match (re-seq str)
   "Return non-nil if RE-SEQ is matched by STR.
 
-RE-SEQ is a list of (RE . MATCH-P).
+RE-SEQ is either a list of (RE . MATCH-P)
+or a single regular expression as string.
 
 RE is a regular expression.
 
@@ -2659,14 +2660,16 @@ Each element of RE-SEQ must match for the function to return true.
 
 This concept is used to generalize regular expressions for
 `ivy--regex-plus' and `ivy--regex-ignore-order'."
-  (let ((res t)
-        re)
-    (while (and res (setq re (pop re-seq)))
-      (setq res
-            (if (cdr re)
-                (string-match-p (car re) str)
-              (not (string-match-p (car re) str)))))
-    res))
+    (let ((res t)
+          re)
+      (if (stringp re-seq)
+          (setq res (string-match-p re-seq str))
+        (while (and res (setq re (pop re-seq)))
+          (setq res
+                (if (cdr re)
+                    (string-match-p (car re) str)
+                  (not (string-match-p (car re) str))))))
+      res))
 
 (defvar ivy--regex-hash
   (make-hash-table :test #'equal)
@@ -3579,18 +3582,29 @@ All CANDIDATES are assumed to match NAME."
           (t
            candidates))))
 
-(defun ivy--prefix-sort (name candidates)
+(cl-defun ivy--prefix-sort (name candidates)
   "Re-sort candidates by NAME.
 All CANDIDATES are assumed to match NAME.
 Prefix matches to NAME are put ahead of the list."
   (if (or (string= name "")
           (= (aref name 0) ?^))
       candidates
-    (let ((re-prefix (concat "\\`" (funcall ivy--regex-function name)))
+    (let ((res-raw (funcall ivy--regex-function name))
+          raw-prefix
+          re-prefix
           res-prefix
           res-noprefix)
+      (if (listp res-raw)
+          (progn
+            (dolist (s res-raw)
+              (if (cdr s)
+                  (push (list (concat "\\`" (car s)) t) raw-prefix)))
+            (if raw-prefix
+                (setq re-prefix raw-prefix)
+              (return-from ivy--prefix-sort candidates)))
+        (setq re-prefix (concat "\\`" res-raw)))
       (dolist (s candidates)
-        (if (string-match-p re-prefix s)
+        (if (ivy-re-match re-prefix s)
             (push s res-prefix)
           (push s res-noprefix)))
       (nconc
